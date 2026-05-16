@@ -1,0 +1,73 @@
+---
+# Installs Docker CE from Docker's official apt repo. On the live VPS
+# this is already in place; the playbook reproduces the same path on
+# fresh hosts.
+
+- name: Prerequisite packages for Docker apt repo
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure /etc/apt/keyrings exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Check whether the Docker GPG key already exists
+  # `get_url --check` falsely reports `changed` when the dest already
+  # exists, because in check mode it creates an empty temp src and
+  # diffs against dest. Gating with stat sidesteps that.
+  ansible.builtin.stat:
+    path: /etc/apt/keyrings/docker.asc
+  register: docker_key_stat
+
+- name: Fetch Docker apt signing key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    owner: root
+    group: root
+    mode: '0644'
+  when: not docker_key_stat.stat.exists
+
+- name: Add Docker apt source
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/docker.list
+    content: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable\n"
+    owner: root
+    group: root
+    mode: '0644'
+  register: docker_apt_source
+
+- name: Refresh apt cache after adding Docker source
+  ansible.builtin.apt:
+    update_cache: true
+  when: docker_apt_source is changed
+
+- name: Install Docker CE and the compose plugin
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+
+- name: "Add {{ admin_user }} to the docker group"
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    groups: docker
+    append: true
+
+- name: Ensure docker service is enabled and running
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started

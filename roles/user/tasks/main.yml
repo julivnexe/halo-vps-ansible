@@ -1,0 +1,37 @@
+---
+# Idempotency contract:
+# - ansible.builtin.user does nothing if the user exists with the desired
+#   shell/state. `groups`+`append: true` only adds, never removes.
+# - ansible.posix.authorized_key with exclusive=false preserves any other
+#   keys already present in the file.
+# - ansible.builtin.copy with `content` diffs against the file and only
+#   writes on mismatch. `validate: visudo -cf` blocks invalid sudoers.
+
+- name: "Create admin user {{ admin_user }}"
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    shell: /bin/bash
+    state: present
+    create_home: true
+
+- name: "Ensure {{ admin_user }} is in the sudo group"
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    groups: sudo
+    append: true
+
+- name: "Authorize SSH public key for {{ admin_user }}"
+  ansible.posix.authorized_key:
+    user: "{{ admin_user }}"
+    key: "{{ ssh_public_key }}"
+    state: present
+    exclusive: false
+
+- name: "Passwordless sudoers drop-in for {{ admin_user }}"
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ admin_user }}"
+    content: "{{ admin_user }} ALL=(ALL) NOPASSWD: ALL\n"
+    owner: root
+    group: root
+    mode: '0440'
+    validate: 'visudo -cf %s'

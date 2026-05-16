@@ -1,0 +1,29 @@
+---
+# Note on filename: 49- sorts BEFORE the cloud-init-managed
+# 50-cloud-init.conf, so PasswordAuthentication / PermitRootLogin set
+# here win sshd's first-occurrence rule. See README.
+
+- name: Write sshd hardening drop-in
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/49-hardening.conf
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PubkeyAuthentication yes
+    owner: root
+    group: root
+    mode: '0644'
+  register: sshd_dropin
+  notify: reload sshd
+
+# Validate the WHOLE sshd config (not just our drop-in) before the
+# handler reloads. If sshd -t fails, the play aborts, the reload
+# handler never fires, and live sshd keeps running the previous config.
+# The bad drop-in does end up on disk in that scenario — operator must
+# `rm /etc/ssh/sshd_config.d/49-hardening.conf` to recover, or fix the
+# playbook and re-run.
+- name: Validate sshd config with `sshd -t`
+  ansible.builtin.command: /usr/sbin/sshd -t
+  changed_when: false
+  when: sshd_dropin is changed

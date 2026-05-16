@@ -1,0 +1,17 @@
+---
+- name: Codify the manual hardening of the Halo VPS
+  hosts: halo
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: user
+      tags: [user, ssh]
+    - role: sshd_hardening
+      tags: [sshd, ssh]
+    - role: firewall
+      tags: [firewall, ufw]
+    - role: docker
+      tags: [docker]
+    - role: monitoring
+      tags: [monitoring]

@@ -1,0 +1,56 @@
+---
+# Idempotency contract:
+# - community.general.ufw uses `ufw status verbose` to inspect existing
+#   rules. If a desired rule already exists in the live ruleset, the
+#   task reports `ok` (no change). Rule order in `ufw status` is the
+#   insertion order; we add rules in the same order the live host
+#   shows, so the post-run state matches byte-for-byte.
+# - Default policies are idempotent (setting the same default twice
+#   is a no-op in ufw).
+# - `state: enabled` on an already-enabled ufw is a no-op.
+
+- name: UFW default — deny incoming
+  community.general.ufw:
+    direction: incoming
+    policy: deny
+
+- name: UFW default — allow outgoing
+  community.general.ufw:
+    direction: outgoing
+    policy: allow
+
+- name: "UFW allow {{ item }}/tcp from anywhere"
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: "{{ public_tcp_ports }}"
+
+- name: "UFW allow {{ item }}/udp from anywhere"
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: udp
+  loop: "{{ public_udp_ports }}"
+
+- name: "UFW allow {{ item.port }}/{{ item.proto }} on docker0"
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    direction: in
+    interface: docker0
+  loop: "{{ observability_interface_ports }}"
+
+- name: "UFW allow {{ item.port }}/{{ item.proto }} on {{ obs_bridge_iface }}"
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    direction: in
+    interface: "{{ obs_bridge_iface }}"
+  loop: "{{ observability_interface_ports }}"
+
+- name: Ensure UFW is enabled
+  community.general.ufw:
+    state: enabled

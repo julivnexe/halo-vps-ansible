@@ -1,0 +1,33 @@
+---
+# Places the docker-compose.yml on disk. Does NOT start containers —
+# the operator does that manually after populating .env with secrets.
+
+- name: "Ensure monitoring directory {{ monitoring_dir }} exists"
+  # mode 0700 matches the live host; everything under here may contain
+  # .env with the Discord webhook + Grafana admin password, so locking
+  # the directory to root-only is defensible.
+  ansible.builtin.file:
+    path: "{{ monitoring_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Render docker-compose.yml (Grafana bound to 127.0.0.1)
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ monitoring_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    force: true
+  register: compose_rendered
+
+- name: Remind operator to set up .env and start the stack on a fresh deploy
+  ansible.builtin.debug:
+    msg: |
+      compose file is now at {{ monitoring_dir }}/docker-compose.yml.
+      On a fresh VPS, copy your .env into {{ monitoring_dir }}/.env and
+      run: cd {{ monitoring_dir }} && docker compose up -d
+  when: compose_rendered is changed

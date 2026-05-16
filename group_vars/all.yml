@@ -1,0 +1,37 @@
+---
+# Variables consumed by every role. Override per-host in host_vars/ if needed.
+
+# Admin user that replaces direct root SSH. Created by the `user` role,
+# added to docker group by the `docker` role.
+admin_user: "<username>"
+
+# SSH public key authorized for {{ admin_user }}. Public keys are not
+# secrets, but this published file ships a placeholder so the repo isn't
+# tied to one operator. Generate yours with:
+#   ssh-keygen -t ed25519 -C "<host>-deploy"
+# and paste the contents of the .pub file here.
+ssh_public_key: "ssh-ed25519 AAAA<base64-payload> <comment>"
+
+# UFW: ports allowed from the public internet.
+public_tcp_ports:
+  - 22       # SSH (admin)
+public_udp_ports:
+  - 2312     # Game server (Halo CE in the reference deployment)
+
+# UFW: ports allowed only from Docker bridge interfaces. Used by
+# Prometheus to scrape netmon-alert (9100) and node-exporter (9101).
+observability_interface_ports:
+  - { port: 9100, proto: tcp }
+  - { port: 9101, proto: tcp }
+
+# Docker network bridge name for the monitoring stack's obs-net.
+# The suffix is the first 12 chars of the docker network ID, generated
+# fresh on each `docker compose up`. After deploying the monitoring
+# stack on a fresh VPS, find your value with:
+#   ip link | grep '^[0-9]*: br-' | awk -F: '{print $2}'
+# and replace this placeholder, then re-run the playbook to update the
+# UFW rules.
+obs_bridge_iface: "br-<docker-network-id-prefix>"
+
+# Where the docker-compose stack lives on disk.
+monitoring_dir: /opt/monitoring-platform

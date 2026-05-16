@@ -1,0 +1,21 @@
+# Ansible runtime / state
+.ansible_facts/
+*.retry
+ansible.log
+
+# Secrets — should never live here, but defensive
+.env
+.env.*
+*.vault
+vault_pass*
+
+# Per-operator concrete configs that mirror committed placeholders.
+# Pattern: any file ending in `.local` (e.g. inventory.ini.local) holds
+# the real values; the committed sibling (inventory.ini) ships sanitized.
+*.local
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
