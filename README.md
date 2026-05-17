@@ -22,7 +22,7 @@ Three repos, three jobs:
 
 - **[terraform-homelab](https://github.com/julivnexe/terraform-homelab)** — rents the server (cloud VPS, DNS, TLS).
 - **halo-vps-ansible** (this repo) — sets up and hardens the server.
-- **[game-server-sentry](https://github.com/julivnexe/game-server-sentry)** — the actual Halo CE server software + the watchdog tools that monitor and auto-ban bad actors.
+- **[Halo-CE-Command-Center](https://github.com/julivnexe/Halo-CE-Command-Center)** — the actual Halo CE server software + the watchdog tools that monitor and auto-ban bad actors.
 
 Terraform answers "does this server exist?" Ansible answers "is it set up safely?" Docker Compose answers "is the game running?"
 
