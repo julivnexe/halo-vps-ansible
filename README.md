@@ -14,7 +14,7 @@ Five steps, run in order:
 2. **sshd_hardening** — turns off SSH password logins and root logins. Tests the SSH config before applying so you can't accidentally lock yourself out. (Loads before Ubuntu's cloud-init SSH config so the hardening actually wins.)
 3. **firewall** — blocks all incoming traffic by default, then opens only what's needed: SSH (22), the Halo CE game port (2312/udp), and the monitoring ports (9100/9101) on the internal Docker network only.
 4. **docker** — installs Docker from the official source and lets your user run it without sudo.
-5. **monitoring** — drops a Prometheus + Grafana + node-exporter setup at `/opt/monitoring-platform/`, with Grafana only reachable through an SSH tunnel. Does **not** start it — you do that yourself after filling in `.env` with your secrets.
+5. **monitoring** — drops the Halo-CE-Command-Center compose stack (Prometheus, Grafana, node-exporter, plus the `netmon-alert` and `auto-banner` containers) at `/opt/monitoring-platform/`, with Grafana only reachable through an SSH tunnel. Does **not** start the stack — you do that yourself after filling in `.env` with your secrets (Discord webhook, Grafana admin password).
 
 ## How it fits with the other repos
 
@@ -22,9 +22,9 @@ Three repos, three jobs:
 
 - **[terraform-homelab](https://github.com/julivnexe/terraform-homelab)** — rents the server (cloud VPS, DNS, TLS).
 - **halo-vps-ansible** (this repo) — sets up and hardens the server.
-- **[Halo-CE-Command-Center](https://github.com/julivnexe/Halo-CE-Command-Center)** — the actual Halo CE server software + the watchdog tools that monitor and auto-ban bad actors.
+- **[Halo-CE-Command-Center](https://github.com/julivnexe/Halo-CE-Command-Center)** — the ops toolkit that runs on top: layered DDoS defense (kernel hardening + iptables/ipset + reputation feeds), Discord notifications for joins/leaves/anomalies, per-IP player stat tracking with in-game and Discord leaderboards, SAPP Lua hooks, and the Prometheus + Grafana dashboards. You bring your own Halo CE server + SAPP install; this stack wraps around it.
 
-Terraform answers "does this server exist?" Ansible answers "is it set up safely?" Docker Compose answers "is the game running?"
+Terraform answers "does this server exist?" Ansible answers "is it set up safely?" Docker Compose (running the Command Center stack) answers "is the game being watched, defended, and graphed?"
 
 ## How to use it
 
