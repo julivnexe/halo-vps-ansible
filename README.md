@@ -1,48 +1,53 @@
 # halo-vps-ansible
 
-Idempotent Ansible playbook that codifies the OS-layer hardening of a production game-server VPS — non-root sudo user, sshd hardening drop-in (with the cloud-init ordering fix), UFW baseline, Docker install, and the monitoring stack from [game-server-sentry](https://github.com/julivnexe/game-server-sentry).
+A setup script for a Linux server that hosts a Halo: Custom Edition game server.
 
-This playbook was reverse-engineered from a running server. It runs `changed=0` against the live state — meaning it's a true codification of what's actually there, not aspirational config.
+Run one command and the server gets a non-root user, locked-down SSH, a firewall, Docker, and a Prometheus + Grafana monitoring stack — without you typing a hundred commands by hand.
 
-## What it does
+This script was built by inspecting a real, already-running server and writing down exactly what was there. Re-running it against that server reports zero changes — proof that the script matches reality, not wishful thinking.
 
-Five roles, applied in order:
+## What it sets up
 
-1. **`user`** — creates a non-root sudo user with key-based SSH access and a `NOPASSWD: ALL` sudoers drop-in.
-2. **`sshd_hardening`** — writes `/etc/ssh/sshd_config.d/49-hardening.conf` (deliberately numbered to load before Ubuntu's `50-cloud-init.conf`, which uses first-match-wins and would otherwise overrule `PasswordAuthentication no`). Validates with `sshd -t` before reloading.
-3. **`firewall`** — UFW baseline: default-deny inbound, default-allow outbound, explicit allows for SSH (22/tcp), game-server port (2312/udp), and the Prometheus scrape ports (9100/9101) bound to the Docker bridge interfaces only.
-4. **`docker`** — installs Docker CE from the official apt repo, adds the admin user to the `docker` group.
-5. **`monitoring`** — places the observability stack's `docker-compose.yml` (Prometheus + Grafana + node-exporter + the netmon-alert/auto-banner pair from game-server-sentry) under `/opt/monitoring-platform/`, with Grafana bound to `127.0.0.1` for SSH-tunnel-only access. Deliberately does **not** start the stack — operator does that after populating `.env` with secrets.
+Five steps, run in order:
 
-## Why this exists
+1. **user** — creates a regular user with admin rights, adds your SSH key, and lets them run admin commands without typing a password.
+2. **sshd_hardening** — turns off SSH password logins and root logins. Tests the SSH config before applying so you can't accidentally lock yourself out. (Loads before Ubuntu's cloud-init SSH config so the hardening actually wins.)
+3. **firewall** — blocks all incoming traffic by default, then opens only what's needed: SSH (22), the Halo CE game port (2312/udp), and the monitoring ports (9100/9101) on the internal Docker network only.
+4. **docker** — installs Docker from the official source and lets your user run it without sudo.
+5. **monitoring** — drops a Prometheus + Grafana + node-exporter setup at `/opt/monitoring-platform/`, with Grafana only reachable through an SSH tunnel. Does **not** start it — you do that yourself after filling in `.env` with your secrets.
 
-Companion to two other repos:
+## How it fits with the other repos
 
-- **[terraform-homelab](https://github.com/julivnexe/terraform-homelab)** provisions infrastructure — VPS, DNS, TLS. Layer 1.
-- **halo-vps-ansible** (this repo) configures the OS layer on top of whatever Terraform provisions. Layer 2.
-- **[game-server-sentry](https://github.com/julivnexe/game-server-sentry)** is the application this stack hosts and monitors. Layer 3.
+Three repos, three jobs:
 
-Different layers, different tools. Terraform handles "does this server exist?" Ansible handles "is this server hardened?" Compose handles "is the app running?"
+- **[terraform-homelab](https://github.com/julivnexe/terraform-homelab)** — rents the server (cloud VPS, DNS, TLS).
+- **halo-vps-ansible** (this repo) — sets up and hardens the server.
+- **[game-server-sentry](https://github.com/julivnexe/game-server-sentry)** — the actual Halo CE server software + the watchdog tools that monitor and auto-ban bad actors.
 
-## Usage
+Terraform answers "does this server exist?" Ansible answers "is it set up safely?" Docker Compose answers "is the game running?"
 
-1. Provision a fresh Ubuntu 22.04 VPS (use terraform-homelab or any cloud provider). Initial SSH access as root or the cloud-default user.
-2. Copy your SSH public key into `group_vars/all.yml` as the `ssh_public_key` variable.
-3. Set `admin_user` in `group_vars/all.yml` and the VPS IP / SSH user in `inventory.ini` (or create `inventory.ini.local` with real values — the `.local` suffix is `.gitignore`'d).
-4. If running ansible directly on the VPS (no separate controller), run `./bootstrap.sh` first. This handles the Ubuntu 22.04 `ansible-core 2.12` → `2.16` upgrade and installs the required Galaxy collections.
-5. Apply: `ansible-playbook -i inventory.ini playbook.yml`
-6. After first `docker compose up -d` of the monitoring stack, find the new Docker bridge name and update `obs_bridge_iface` in `group_vars/all.yml`:
+## How to use it
+
+1. Get a fresh Ubuntu 22.04 VPS (from terraform-homelab or any cloud provider). You'll log in as root or the default cloud user.
+2. Open `group_vars/all.yml` and put your SSH public key in `ssh_public_key` and your desired username in `admin_user`.
+3. Put the server's IP and SSH user in `inventory.ini` — or make a private copy called `inventory.ini.local` (that filename is gitignored).
+4. If you're running Ansible directly on the VPS itself, run `./bootstrap.sh` first. It upgrades Ubuntu 22.04's old Ansible to a version new enough to work, and installs the required add-ons.
+5. Run it:
+   ```
+   ansible-playbook -i inventory.ini playbook.yml
+   ```
+6. After the monitoring stack runs `docker compose up -d` for the first time, find its Docker bridge name and put it in `group_vars/all.yml` as `obs_bridge_iface`:
    ```
    ip link | grep '^[0-9]*: br-' | awk -F: '{print $2}' | tr -d ' '
    ```
-   Re-run the playbook to add the per-bridge UFW rules.
+   Re-run the playbook so the firewall opens monitoring ports on that bridge.
 
-## Operator customization
+## Customizing for your own deployment
 
-The committed `group_vars/all.yml` and `inventory.ini` ship with placeholders (`<username>`, `<vps-ip>`, `<docker-network-id-prefix>`, etc.) so the public repo isn't tied to one operator's deployment. Three ways to inject your real values:
+The committed config ships with placeholders (`<username>`, `<vps-ip>`, etc.) so this public repo isn't tied to one person's setup. Three ways to plug in your own values:
 
-1. **Fork and edit** `group_vars/all.yml` directly in your downstream copy. Simplest for a single-operator deployment.
-2. **`host_vars/halo-vps.yml`** with the real values — this file is `.gitignore`'d via the `*.local` pattern if you name it `halo-vps.yml.local`, or you can extend `.gitignore` to cover `host_vars/`.
+1. **Fork and edit** `group_vars/all.yml` directly. Simplest for a single-server deployment.
+2. **`host_vars/halo-vps.yml`** with your real values — name it `halo-vps.yml.local` (gitignored) or extend `.gitignore` to cover the whole folder.
 3. **`--extra-vars`** on the command line:
    ```
    ansible-playbook -i inventory.ini playbook.yml \
@@ -51,25 +56,25 @@ The committed `group_vars/all.yml` and `inventory.ini` ship with placeholders (`
        -e obs_bridge_iface=br-abc123def456
    ```
 
-Either way, keep `inventory.ini.local` for your real VPS IP and SSH user — the committed `inventory.ini` only has placeholders.
+Either way, keep `inventory.ini.local` for your real IP and SSH user.
 
-## Idempotency
+## "Does it actually match the live server?"
 
-Running this playbook against an already-configured host produces `changed=0`. If a re-run reports anything `changed`, something is drifting between the playbook and the actual state. Check first with:
+Run it with `--check --diff` to preview without changing anything:
 
 ```
 ansible-playbook -i inventory.ini playbook.yml --check --diff
 ```
 
-The verified baseline (against the reference deployment): `ok=21 changed=0 failed=0`.
+A real run against the reference deployment reports `ok=21 changed=0 failed=0`. If you re-run it and see anything `changed`, that means the live server has drifted from the script — go investigate.
 
-## v0 caveats
+## Known rough edges (v0)
 
-- **Docker bridge interface name is hash-derived.** The `obs_bridge_iface` variable is a placeholder; the actual name depends on the docker network creation order. Future improvement: name the network explicitly in the compose file to get a stable bridge name across deployments.
-- **Compose file is a verbatim template.** No Jinja parametrization yet. For multi-host deployments you'd want to variable-ize ports, image tags, and `.env` contents.
-- **ansible-core upgrade is required on Ubuntu 22.04** because apt ships 2.12, which is too old for current Galaxy collection metadata. `bootstrap.sh` handles this on the VPS itself.
-- **No CI yet.** A GitHub Actions workflow running `ansible-playbook --syntax-check` and `ansible-lint` on every push would be a v0.1 addition.
-- **Reverse-engineered, not designed.** Some choices (e.g. `NOPASSWD: ALL` for the admin user, an open `22/tcp` from anywhere) are operationally convenient but not what you'd write from scratch as a security baseline. Audit before adopting elsewhere.
+- **Docker bridge name is random.** `obs_bridge_iface` is a placeholder because the bridge name depends on the order Docker created networks. A future fix is to name the network explicitly in the compose file.
+- **Compose file is copied as-is.** No templating yet. If you wanted to deploy this to multiple servers with different ports, you'd want to make the compose file a template.
+- **Ubuntu 22.04 needs the bootstrap script.** Its built-in Ansible is too old. `bootstrap.sh` upgrades it.
+- **No CI yet.** A GitHub Actions workflow running `ansible-playbook --syntax-check` and `ansible-lint` would be a nice v0.1 addition.
+- **Reverse-engineered, not designed.** Some choices (passwordless sudo, SSH open to the whole internet) are convenient but wouldn't be your first pick if you were designing a security baseline from scratch. Read it before copying it.
 
 ## License
 
